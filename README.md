@@ -5,6 +5,9 @@ Use "make" for creating mygit
 If you need help write: "./mygit"
 
 UPD:
+
 repo_log gets only positive integer after --n
+
 repo_add, repo_remove,repo_checkout accept directories now
+
 fixed bug with repeated adding or deleting files in one index
