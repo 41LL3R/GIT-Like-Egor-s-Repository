@@ -7,13 +7,13 @@ void help_me_plz() {
     printf("Usage: mygit <command> [<args>]\n");
     printf("Available commands:\n");
     printf("  repo_init                          Initialize a new repository\n");
-    printf("  repo_add <filename>                Add a file to the index\n");
-    printf("  repo_remove <filename>             Mark a file for removal\n");
+    printf("  repo_add <filename>                Add a file or directory to the index\n");
+    printf("  repo_remove <filename>             Mark a file or directory for removal\n");
     printf("  repo_commit <message>              Create a new commit with a message\n");
     printf("  repo_status                        Show the current index\n");
     printf("  repo_log --n <number> <hash>       Show commit history (number and hash optional)\n");
     printf("  repo_diff <hash>                   Show difference between current and target commit\n");
-    printf("  repo_checkout <hash> <filename>    Restore a file from a specific commit\n");
+    printf("  repo_checkout <hash> <filename>    Restore a file or directory from a specific commit\n");
     return;
 }
 
@@ -69,13 +69,30 @@ int main(int argc, char* argv[]) {
         for (int i = 2; i < argc; i++) {
             if (strcmp(argv[i], "--n") == 0) {
                 if (i + 1 < argc) {
-                    num_limit = atoi(argv[i + 1]);
+                    char *num_str = argv[i + 1];
+                    int is_valid = 1;
+
+                    for (int j = 0; num_str[j] != '\0'; j++) {
+                        if (num_str[j] < '0' || num_str[j] > '9') {
+                            is_valid = 0;
+                            break;
+                        }
+                    }
+
+                    if (!is_valid || num_str[0] == '\0') {
+                        printf("Error: Option --n requires a valid positive integer.\n");
+                        return 1;
+                    }
+
+                    num_limit = atoi(num_str);
                     i++;
-                } else {
+                }
+                else {
                     printf("Error: Missing number after --n option.\n");
                     return 1;
                 }
-            } else {
+            }
+            else {
                 start_hash = argv[i];
             }
         }

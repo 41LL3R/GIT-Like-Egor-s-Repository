@@ -3,6 +3,8 @@
 #include <string.h>
 #include "repository.h"
 #include <stdint.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 int repo_init(void) { // инициализация репозитория
     if (file_exists(".mygit")) {
@@ -23,53 +25,210 @@ int repo_init(void) { // инициализация репозитория
     return 0;
 }
 
-int repo_add(const char *filename) { // добавляем файл в следущий коммит
-    if (!file_exists(filename)) {
-        printf("Error: file %s does not exist.\n", filename);
+int repo_add(const char *path) { // добавляем файл или папку в следущий коммит
+
+    struct stat path_stat;
+
+    if (stat(path, &path_stat) != 0) {
+        printf("Error: File or directory %s does not exist.\n", path);
         return -1;
     }
 
+    // Если добавляем папку
+    if (S_ISDIR(path_stat.st_mode)) {
+        DIR *dir = opendir(path);
+        if (!dir) {
+            printf("Error: Could not open directory %s\n", path);
+            return -1;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+
+            char full_path[1024];
+            sprintf(full_path, "%s/%s", path, entry->d_name);
+
+            repo_add(full_path);
+        }
+        closedir(dir);
+        return 0;
+    }
+
+    // Если добавляем файл
     char hash[9];
-    if (hash_function(filename, hash) != 0) return -1;
+    if (hash_function(path, hash) != 0) return -1;
 
     char obj_path[512];
     sprintf(obj_path, "%s/%s", ".mygit/objects", hash);
     if (!file_exists(obj_path)) {
-        copy_file(filename, obj_path);
+        copy_file(path, obj_path);
     }
 
-    FILE *f = fopen(".mygit/index", "a");
-    if (!f) return -1;
+    FILE *old_index = fopen(".mygit/index", "r");
+    FILE *new_index = fopen(".mygit/index.tmp", "w");
+    if (!new_index) {
+        if (old_index) fclose(old_index);
+        return -1;
+    }
 
-    fprintf(f, "%s %s 0\n", filename, hash);
-    fclose(f);
+    int is_updated = 0; 
 
-    printf("File %s added to index.\n", filename);
+    if (old_index) {
+        char line[512];
+        char idx_name[256], idx_hash[9];
+        int idx_removed;
+
+        while (fgets(line, sizeof(line), old_index)) {
+            if (sscanf(line, "%255s %8s %d", idx_name, idx_hash, &idx_removed) == 3) {
+                
+                if (strcmp(idx_name, path) == 0) {
+                    fprintf(new_index, "%s %s 0\n", path, hash);
+                    is_updated = 1;
+                } 
+                else {
+                    fprintf(new_index, "%s %s %d\n", idx_name, idx_hash, idx_removed);
+                }
+            }
+        }
+        fclose(old_index);
+    }
+
+    if (!is_updated) {
+        fprintf(new_index, "%s %s 0\n", path, hash);
+    }
+
+    fclose(new_index);
+
+    remove(".mygit/index");
+    if (rename(".mygit/index.tmp", ".mygit/index") != 0) {
+        printf("Error: Failed to update index for %s\n", path);
+        return -1;
+    }
+
+    printf("File %s added to index.\n", path);
     return 0;
 }
 
-int repo_remove(const char *filename) { // удаляем файл из следущего коммита
+int repo_remove(const char *filename) {
+    struct stat path_stat;
+
+    // Папка или файл существуют на диске
+    if (stat(filename, &path_stat) == 0) {
+        if (S_ISDIR(path_stat.st_mode)) {
+            DIR *dir = opendir(filename);
+            if (!dir) return -1;
+
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL) {
+                if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                    continue;
+                }
+
+                char full_path[1024];
+                sprintf(full_path, "%s/%s", filename, entry->d_name);
+                
+                // Рекурсивно вызываем удаление
+                repo_remove(full_path);
+            }
+            closedir(dir);
+            return 0; 
+        }
+    } 
+    // Папку уже удалили с диска
+    else {
+        char folder_prefix[512];
+        sprintf(folder_prefix, "%s/", filename);
+        size_t prefix_len = strlen(folder_prefix);
+
+        FILE *f_idx = fopen(".mygit/index", "r");
+        if (f_idx) {
+            char idx_name[256], idx_hash[9];
+            int idx_removed;
+            int found_any_subfile = 0;
+
+            char paths_to_remove[100][256];
+            int count = 0;
+
+            while (fscanf(f_idx, "%255s %8s %d", idx_name, idx_hash, &idx_removed) == 3) {
+                if (strncmp(idx_name, folder_prefix, prefix_len) == 0 && count < 100) {
+                    strcpy(paths_to_remove[count], idx_name);
+                    count++;
+                    found_any_subfile = 1;
+                }
+            }
+            fclose(f_idx);
+            
+            for (int i = 0; i < count; i++) {
+                repo_remove(paths_to_remove[i]);
+            }
+
+            if (found_any_subfile) {
+                return 0;
+            }
+        }
+    }
+
+    // Удаляем файл
     FILE *f_read = fopen(".mygit/index", "r");
     if (f_read) {
         char name[256], hash[9];
         int removed;
         while (fscanf(f_read, "%255s %8s %d", name, hash, &removed) == 3) {
             if (strcmp(name, filename) == 0 && removed == 1) {
-                printf("File %s is already marked to be removed.\n", filename);
                 fclose(f_read);
-                return 0;
+                return 0; 
             }
         }
         fclose(f_read);
     }
 
-    FILE *f = fopen(".mygit/index", "a");
-    if (!f) return -1;
-    
-    fprintf(f, "%s 00000000 1\n", filename);
-    fclose(f);
+    FILE *old_index = fopen(".mygit/index", "r");
+    FILE *new_index = fopen(".mygit/index.tmp", "w");
+    if (!new_index) {
+        if (old_index) fclose(old_index);
+        return -1;
+    }
 
-    printf("File %s marked to be removed in next commit.\n", filename);
+    int was_in_index = 0;
+    if (old_index) {
+        char line[512];
+        char idx_name[256], idx_hash[9];
+        int idx_removed;
+
+        while (fgets(line, sizeof(line), old_index)) {
+            if (sscanf(line, "%255s %8s %d", idx_name, idx_hash, &idx_removed) == 3) {
+                if (strcmp(idx_name, filename) == 0 && idx_removed == 0) {
+                    was_in_index = 1;
+                    continue;
+                }
+                fprintf(new_index, "%s %s %d\n", idx_name, idx_hash, idx_removed);
+            }
+        }
+        fclose(old_index);
+    }
+
+    if (!was_in_index) {
+        struct stat s;
+        int is_dir = (stat(filename, &s) == 0 && S_ISDIR(s.st_mode));
+        if (!is_dir) {
+            fprintf(new_index, "%s 00000000 1\n", filename);
+            printf("File %s marked to be removed in next commit.\n", filename);
+        }
+    } else {
+        printf("File %s removed from index (add canceled).\n", filename);
+    }
+
+    fclose(new_index);
+    
+    remove(".mygit/index");
+    if (rename(".mygit/index.tmp", ".mygit/index") != 0) {
+        printf("Error: index update failed for %s\n", filename);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -139,6 +298,13 @@ int repo_commit(const char *message) { // создание коммита
                                 changed_in_index = 1;
                                 break;
                             }
+
+                            char dir_prefix[512];
+                            sprintf(dir_prefix, "%s/", idx_name);
+                            if (strncmp(parent_name, dir_prefix, strlen(dir_prefix)) == 0) {
+                                changed_in_index = 1;
+                                break;
+                            }
                         }
                         fclose(idx_check);
                     }
@@ -146,7 +312,7 @@ int repo_commit(const char *message) { // создание коммита
                     if (!changed_in_index) {
                         fprintf(commit_file, "%s %s 0\n", parent_name, parent_hash);
                     }
-                }
+                } 
             }
             fclose(parent_file);
         }
@@ -370,7 +536,7 @@ int repo_diff(const char *target_hash) { // вывод разницы между
     return 0;
 }
 
-int repo_checkout(const char *hash, const char *filename) { // Восстановление выбранного файла из выбранного коммита
+int repo_checkout(const char *hash, const char *filename) { // Восстановление выбранного файла или папки
     char commit_path[512];
     sprintf(commit_path, ".mygit/commits/%s", hash);
 
@@ -386,19 +552,30 @@ int repo_checkout(const char *hash, const char *filename) { // Восстано�
     char line[512];
     char f_name[256], f_hash[9];
     int is_removed;
-    int found = 0;
+    int found_any = 0;
+
+    char dir_prefix[512];
+    sprintf(dir_prefix, "%s/", filename);
+    size_t prefix_len = strlen(dir_prefix);
 
     while (fgets(line, sizeof(line), commit_file)) {
-        if (sscanf(line, "%256s %8s %d", f_name, f_hash, &is_removed) == 3) {
-            
-            if (strcmp(f_name, filename) == 0) {
-                found = 1;
+        if (sscanf(line, "%255s %8s %d", f_name, f_hash, &is_removed) == 3) {
 
+            if (strcmp(f_name, filename) == 0 || strncmp(f_name, dir_prefix, prefix_len) == 0) {
+                
                 if (is_removed) {
-                    printf("Error: File %s was deleted in commit %s.\n", filename, hash);
-                    fclose(commit_file);
-                    return -1;
+                    if (strcmp(f_name, filename) == 0) {
+                        printf("Error: File %s was deleted in commit %s.\n", filename, hash);
+                        fclose(commit_file);
+                        return -1;
+                    }
+                    continue;
                 }
+
+                found_any = 1;
+
+                // Создаем папки для файла, если их стерли с диска
+                create_parent_dirs(f_name);
 
                 char obj_path[512];
                 sprintf(obj_path, ".mygit/objects/%s", f_hash);
@@ -409,16 +586,14 @@ int repo_checkout(const char *hash, const char *filename) { // Восстано�
                 else {
                     printf("Error: Could not restore %s (object %s missing)\n", f_name, f_hash);
                 }
-                
-                break;
             }
         }
     }
 
-    if (!found) {
-        printf("Error: File %s not found in commit %s.\n", filename, hash);
+    if (!found_any) {
+        printf("Error: File or directory %s not found in commit %s.\n", filename, hash);
     }
 
     fclose(commit_file);
-    return found ? 0 : -1;
+    return found_any ? 0 : -1;
 }

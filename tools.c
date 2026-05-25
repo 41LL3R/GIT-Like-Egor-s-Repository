@@ -111,3 +111,21 @@ int find_file_in_commit(const char *commit_hash, const char *filename, char *out
     fclose(f);
     return found; // 0 - ок, 1 - удален, -1 - не найден
 }
+
+void create_parent_dirs(const char *file_path) {
+    char path_copy[512];
+    strncpy(path_copy, file_path, sizeof(path_copy) - 1);
+    path_copy[sizeof(path_copy) - 1] = '\0';
+
+    for (int i = 0; path_copy[i] != '\0'; i++) {
+        if (path_copy[i] == '/') {
+            path_copy[i] = '\0';
+#ifdef _WIN32
+            mkdir(path_copy);
+#else
+            mkdir(path_copy, 0777);
+#endif
+            path_copy[i] = '/'; 
+        }
+    }
+}
