@@ -27,6 +27,11 @@ int repo_init(void) { // инициализация репозитория
 
 int repo_add(const char *path) { // добавляем файл или папку в следущий коммит
 
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     if (!is_path_allowed(path)) {
         printf("Error: Access denied. You can only work with files inside the current directory.\n");
         return -1;
@@ -118,6 +123,11 @@ int repo_add(const char *path) { // добавляем файл или папк�
 }
 
 int repo_remove(const char *filename) {
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     if (!is_path_allowed(filename)) {
         printf("Error: Access denied. You can only work with files inside the current directory.\n");
         return -1;
@@ -243,6 +253,11 @@ int repo_remove(const char *filename) {
 }
 
 int repo_commit(const char *message) { // создание коммита
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     commit_data new_commit;
     memset(&new_commit, 0, sizeof(commit_data));
 
@@ -357,6 +372,11 @@ int repo_commit(const char *message) { // создание коммита
 }
 
 int repo_status(void) { // просмотр содержимого индекса
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     FILE *f = fopen(".mygit/index", "r");
     if (!f) {
         printf("Index empty. Nothing to commit.\n");
@@ -416,6 +436,11 @@ int repo_status(void) { // просмотр содержимого индекс�
 }
 
 void repo_log(int n, const char *start_commit_hash) { // просмотр лога
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return;
+    }
+
     char current_hash[HASH_LEN];
 
     if (start_commit_hash == NULL) {
@@ -460,6 +485,11 @@ void repo_log(int n, const char *start_commit_hash) { // просмотр лог
 }
 
 int repo_diff(const char *target_hash) { // вывод разницы между текущим и выбранным коммитом
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     char cur_hash[HASH_LEN];
     FILE *cur_file = fopen(".mygit/CURRENT", "r");
     if (!cur_file) {
@@ -547,6 +577,11 @@ int repo_diff(const char *target_hash) { // вывод разницы между
 }
 
 int repo_checkout(const char *hash, const char *filename) { // Восстановление выбранного файла или папки
+    if (!file_exists(".mygit")) {
+        printf("Error: Repository not initialized. Run repo_init first.\n");
+        return 1;
+    }
+
     if (!is_path_allowed(filename)) {
         printf("Error: Access denied. You can only work with files inside the current directory.\n");
         return -1;
