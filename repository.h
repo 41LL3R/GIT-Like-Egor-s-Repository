@@ -2,6 +2,12 @@
 
 #include "tools.h"
 
+#define FILE_PATH_LEN 512
+#define DIR_PATH_LEN 1024
+#define LINE_LEN 512
+#define NAME_LEN 256
+#define HASH_LEN 9
+
 typedef struct {
     char hash[9];
     char parent_hash[9];

@@ -129,3 +129,23 @@ void create_parent_dirs(const char *file_path) {
         }
     }
 }
+
+int is_path_allowed(const char *path) {
+    if(strstr(path, "..") != NULL) {
+        return 0;
+    }
+
+    char first = path[0];
+
+    //На windows
+    if (((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z')) && path[1] == ':') {
+        return 0;
+    } 
+
+    //На Linux
+    if (first == '/') {
+        return 0;
+    }
+
+    return 1;
+}

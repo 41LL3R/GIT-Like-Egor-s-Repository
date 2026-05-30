@@ -27,6 +27,11 @@ int repo_init(void) { // инициализация репозитория
 
 int repo_add(const char *path) { // добавляем файл или папку в следущий коммит
 
+    if (!is_path_allowed(path)) {
+        printf("Error: Access denied. You can only work with files inside the current directory.\n");
+        return -1;
+    }
+
     struct stat path_stat;
 
     if (stat(path, &path_stat) != 0) {
@@ -48,7 +53,7 @@ int repo_add(const char *path) { // добавляем файл или папк�
                 continue;
             }
 
-            char full_path[1024];
+            char full_path[DIR_PATH_LEN];
             sprintf(full_path, "%s/%s", path, entry->d_name);
 
             repo_add(full_path);
@@ -58,10 +63,10 @@ int repo_add(const char *path) { // добавляем файл или папк�
     }
 
     // Если добавляем файл
-    char hash[9];
+    char hash[HASH_LEN];
     if (hash_function(path, hash) != 0) return -1;
 
-    char obj_path[512];
+    char obj_path[FILE_PATH_LEN];
     sprintf(obj_path, "%s/%s", ".mygit/objects", hash);
     if (!file_exists(obj_path)) {
         copy_file(path, obj_path);
@@ -77,8 +82,8 @@ int repo_add(const char *path) { // добавляем файл или папк�
     int is_updated = 0; 
 
     if (old_index) {
-        char line[512];
-        char idx_name[256], idx_hash[9];
+        char line[LINE_LEN];
+        char idx_name[NAME_LEN], idx_hash[HASH_LEN];
         int idx_removed;
 
         while (fgets(line, sizeof(line), old_index)) {
@@ -113,6 +118,11 @@ int repo_add(const char *path) { // добавляем файл или папк�
 }
 
 int repo_remove(const char *filename) {
+    if (!is_path_allowed(filename)) {
+        printf("Error: Access denied. You can only work with files inside the current directory.\n");
+        return -1;
+    }
+
     struct stat path_stat;
 
     // Папка или файл существуют на диске
@@ -127,7 +137,7 @@ int repo_remove(const char *filename) {
                     continue;
                 }
 
-                char full_path[1024];
+                char full_path[DIR_PATH_LEN];
                 sprintf(full_path, "%s/%s", filename, entry->d_name);
                 
                 // Рекурсивно вызываем удаление
@@ -139,17 +149,17 @@ int repo_remove(const char *filename) {
     } 
     // Папку уже удалили с диска
     else {
-        char folder_prefix[512];
+        char folder_prefix[FILE_PATH_LEN];
         sprintf(folder_prefix, "%s/", filename);
         size_t prefix_len = strlen(folder_prefix);
 
         FILE *f_idx = fopen(".mygit/index", "r");
         if (f_idx) {
-            char idx_name[256], idx_hash[9];
+            char idx_name[NAME_LEN], idx_hash[HASH_LEN];
             int idx_removed;
             int found_any_subfile = 0;
 
-            char paths_to_remove[100][256];
+            char paths_to_remove[100][NAME_LEN];
             int count = 0;
 
             while (fscanf(f_idx, "%255s %8s %d", idx_name, idx_hash, &idx_removed) == 3) {
@@ -174,7 +184,7 @@ int repo_remove(const char *filename) {
     // Удаляем файл
     FILE *f_read = fopen(".mygit/index", "r");
     if (f_read) {
-        char name[256], hash[9];
+        char name[NAME_LEN], hash[HASH_LEN];
         int removed;
         while (fscanf(f_read, "%255s %8s %d", name, hash, &removed) == 3) {
             if (strcmp(name, filename) == 0 && removed == 1) {
@@ -194,8 +204,8 @@ int repo_remove(const char *filename) {
 
     int was_in_index = 0;
     if (old_index) {
-        char line[512];
-        char idx_name[256], idx_hash[9];
+        char line[LINE_LEN];
+        char idx_name[NAME_LEN], idx_hash[HASH_LEN];
         int idx_removed;
 
         while (fgets(line, sizeof(line), old_index)) {
@@ -262,7 +272,7 @@ int repo_commit(const char *message) { // создание коммита
     h += h << 15;
     sprintf(new_commit.hash, "%08x", h);
 
-    char commit_path[512];
+    char commit_path[FILE_PATH_LEN];
     sprintf(commit_path, ".mygit/commits/%s", new_commit.hash);
     
     FILE *commit_file = fopen(commit_path, "wb");
@@ -272,7 +282,7 @@ int repo_commit(const char *message) { // создание коммита
 
     // Если есть родительский коммит — переносим файлы из него
     if (strcmp(new_commit.parent_hash, "none") != 0) {
-        char parent_path[512];
+        char parent_path[FILE_PATH_LEN];
         sprintf(parent_path, ".mygit/commits/%s", new_commit.parent_hash);
 
         FILE *parent_file = fopen(parent_path, "rb");
@@ -280,8 +290,8 @@ int repo_commit(const char *message) { // создание коммита
             commit_data to_skip;
             fread(&to_skip, sizeof(commit_data), 1, parent_file);
 
-            char parent_line[512];
-            char parent_name[256], parent_hash[9];
+            char parent_line[LINE_LEN];
+            char parent_name[NAME_LEN], parent_hash[HASH_LEN];
             int parent_removed;
 
             while (fgets(parent_line, sizeof(parent_line), parent_file)) {
@@ -291,7 +301,7 @@ int repo_commit(const char *message) { // создание коммита
                     FILE *idx_check = fopen(".mygit/index", "r");
                     int changed_in_index = 0;
                     if (idx_check) {
-                        char idx_name[256], idx_hash[9];
+                        char idx_name[NAME_LEN], idx_hash[HASH_LEN];
                         int idx_removed;
                         while (fscanf(idx_check, "%255s %8s %d", idx_name, idx_hash, &idx_removed) == 3) {
                             if (strcmp(parent_name, idx_name) == 0) {
@@ -299,7 +309,7 @@ int repo_commit(const char *message) { // создание коммита
                                 break;
                             }
 
-                            char dir_prefix[512];
+                            char dir_prefix[FILE_PATH_LEN];
                             sprintf(dir_prefix, "%s/", idx_name);
                             if (strncmp(parent_name, dir_prefix, strlen(dir_prefix)) == 0) {
                                 changed_in_index = 1;
@@ -321,7 +331,7 @@ int repo_commit(const char *message) { // создание коммита
     // Дописываем новые файлы из индекса
     FILE *idx = fopen(".mygit/index", "r");
     if (idx) {
-        char i_name[256], i_hash[9];
+        char i_name[NAME_LEN], i_hash[HASH_LEN];
         int i_removed;
         while (fscanf(idx, "%255s %8s %d", i_name, i_hash, &i_removed) == 3) {
             if (i_removed == 0) {
@@ -353,7 +363,7 @@ int repo_status(void) { // просмотр содержимого индекс�
         return 0;
     }
 
-    char cur_hash[9];
+    char cur_hash[HASH_LEN];
     int has_cur = 0;
     FILE *h_file = fopen(".mygit/CURRENT", "r");
     if (h_file) {
@@ -363,8 +373,8 @@ int repo_status(void) { // просмотр содержимого индекс�
         fclose(h_file);
     }
 
-    char filename[256];
-    char hash[9];
+    char filename[NAME_LEN];
+    char hash[HASH_LEN];
     int removed;
     int has_changes = 0;
 
@@ -378,7 +388,7 @@ int repo_status(void) { // просмотр содержимого индекс�
             printf("  (deleted)   %s\n", filename);
         } 
         else if (has_cur) {
-            char old_hash[9];
+            char old_hash[HASH_LEN];
             int res = find_file_in_commit(cur_hash, filename, old_hash);
             
             if (res == -1 || res == 1) {
@@ -406,7 +416,7 @@ int repo_status(void) { // просмотр содержимого индекс�
 }
 
 void repo_log(int n, const char *start_commit_hash) { // просмотр лога
-    char current_hash[9];
+    char current_hash[HASH_LEN];
 
     if (start_commit_hash == NULL) {
         FILE *h = fopen(".mygit/CURRENT", "r");
@@ -419,14 +429,14 @@ void repo_log(int n, const char *start_commit_hash) { // просмотр лог
         fclose(h);
     }
     else {
-        strncpy(current_hash, start_commit_hash, 9);
+        strncpy(current_hash, start_commit_hash, HASH_LEN);
     }
 
     int count = 0;
     while (strcmp(current_hash, "none") != 0) {
         if (n != -1 && count >= n) break;
 
-        char path[512];
+        char path[FILE_PATH_LEN];
         sprintf(path, ".mygit/commits/%s", current_hash);
         FILE *commit_file = fopen(path, "rb");
         if (!commit_file) break;
@@ -450,7 +460,7 @@ void repo_log(int n, const char *start_commit_hash) { // просмотр лог
 }
 
 int repo_diff(const char *target_hash) { // вывод разницы между текущим и выбранным коммитом
-    char cur_hash[9];
+    char cur_hash[HASH_LEN];
     FILE *cur_file = fopen(".mygit/CURRENT", "r");
     if (!cur_file) {
         printf("Error: No commits in CURRENT yet.\n");
@@ -464,7 +474,7 @@ int repo_diff(const char *target_hash) { // вывод разницы между
         return 0;
     }
 
-    char target_path[512];
+    char target_path[FILE_PATH_LEN];
     sprintf(target_path, ".mygit/commits/%s", target_hash);
     FILE *target_file = fopen(target_path, "rb");
     if (!target_file) {
@@ -479,8 +489,8 @@ int repo_diff(const char *target_hash) { // вывод разницы между
     printf("%-20s %-12s %-12s  %s\n", "File Name", "Target Hash", "Current Hash", "Status");
     printf("-----------------------------------------------------------------\n");
 
-    char line[512];
-    char file_name[256], t_hash[9];
+    char line[LINE_LEN];
+    char file_name[NAME_LEN], t_hash[HASH_LEN];
     int t_removed;
     int has_changes = 0;
 
@@ -489,7 +499,7 @@ int repo_diff(const char *target_hash) { // вывод разницы между
         if (sscanf(line, "%s %s %d", file_name, t_hash, &t_removed) == 3) {
             if (t_removed) continue;
 
-            char h_hash[9];
+            char h_hash[HASH_LEN];
             int h_removed = find_file_in_commit(cur_hash, file_name, h_hash);
 
             if (h_removed == -1 || h_removed == 1) {
@@ -505,19 +515,19 @@ int repo_diff(const char *target_hash) { // вывод разницы между
     fclose(target_file);
 
     // Ищем новые файлы в текущем коммите
-    char cur_path[512];
+    char cur_path[FILE_PATH_LEN];
     sprintf(cur_path, ".mygit/commits/%s", cur_hash);
     FILE *cur_file_scan = fopen(cur_path, "rb");
     if (cur_file_scan) {
         fread(&to_skip, sizeof(commit_data), 1, cur_file_scan);
-        char c_name[256], c_hash[9];
+        char c_name[NAME_LEN], c_hash[HASH_LEN];
         int c_removed;
 
         while (fgets(line, sizeof(line), cur_file_scan)) {
             if (sscanf(line, "%s %s %d", c_name, c_hash, &c_removed) == 3) {
                 if (c_removed) continue;
 
-                char temp_hash[9];
+                char temp_hash[HASH_LEN];
 
                 int res = find_file_in_commit(target_hash, c_name, temp_hash);
                 if (res == -1 || res == 1) {
@@ -537,7 +547,12 @@ int repo_diff(const char *target_hash) { // вывод разницы между
 }
 
 int repo_checkout(const char *hash, const char *filename) { // Восстановление выбранного файла или папки
-    char commit_path[512];
+    if (!is_path_allowed(filename)) {
+        printf("Error: Access denied. You can only work with files inside the current directory.\n");
+        return -1;
+    }
+
+    char commit_path[FILE_PATH_LEN];
     sprintf(commit_path, ".mygit/commits/%s", hash);
 
     FILE *commit_file = fopen(commit_path, "rb");
@@ -549,12 +564,12 @@ int repo_checkout(const char *hash, const char *filename) { // Восстано�
     commit_data to_skip;
     fread(&to_skip, sizeof(commit_data), 1, commit_file);
 
-    char line[512];
-    char f_name[256], f_hash[9];
+    char line[LINE_LEN];
+    char f_name[NAME_LEN], f_hash[HASH_LEN];
     int is_removed;
     int found_any = 0;
 
-    char dir_prefix[512];
+    char dir_prefix[FILE_PATH_LEN];
     sprintf(dir_prefix, "%s/", filename);
     size_t prefix_len = strlen(dir_prefix);
 
@@ -577,7 +592,7 @@ int repo_checkout(const char *hash, const char *filename) { // Восстано�
                 // Создаем папки для файла, если их стерли с диска
                 create_parent_dirs(f_name);
 
-                char obj_path[512];
+                char obj_path[FILE_PATH_LEN];
                 sprintf(obj_path, ".mygit/objects/%s", f_hash);
                 
                 if (copy_file(obj_path, f_name) == 0) {

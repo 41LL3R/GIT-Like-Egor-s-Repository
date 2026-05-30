@@ -15,3 +15,5 @@ void get_current_time(char *s, int len);
 int find_file_in_commit(const char *commit_hash, const char *filename, char *out_hash);
 
 void create_parent_dirs(const char *file_path);
+
+int is_path_allowed(const char *path);
